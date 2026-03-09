@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import {
-  BrowserRouter,
+  HashRouter,
   NavLink,
   Navigate,
   Route,
@@ -52,9 +52,9 @@ function AppLayout() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppLayout />
-    </BrowserRouter>
+    </HashRouter>
   )
 }
 
