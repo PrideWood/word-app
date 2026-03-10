@@ -1,10 +1,42 @@
+import {
+  DEFAULT_LEARNING_LANGUAGE,
+  isSupportedLearningLanguage,
+} from './language.js'
+
 const STORAGE_KEY = 'my-word-app-data'
+
+function normalizeWordProgress(item) {
+  const selfCheckSuccessCount = Number(item.selfCheckSuccessCount) || 0
+  const hintedSpellSuccessCount = Number(item.hintedSpellSuccessCount) || 0
+  const fullSpellSuccessCount = Number(item.fullSpellSuccessCount) || 0
+  const isMastered =
+    selfCheckSuccessCount >= 2 &&
+    hintedSpellSuccessCount >= 2 &&
+    fullSpellSuccessCount >= 2
+  const hasLearningProgress =
+    selfCheckSuccessCount > 0 ||
+    hintedSpellSuccessCount > 0 ||
+    fullSpellSuccessCount > 0 ||
+    (Number(item.correctCount) || 0) > 0 ||
+    (Number(item.wrongCount) || 0) > 0
+
+  return {
+    ...item,
+    spellingProgress: hintedSpellSuccessCount >= 2 ? 3 : hintedSpellSuccessCount,
+    selfCheckSuccessCount,
+    hintedSpellSuccessCount,
+    fullSpellSuccessCount,
+    status: isMastered ? 'mastered' : hasLearningProgress ? 'learning' : 'new',
+  }
+}
 
 function getDefaultData() {
   return {
     words: [],
     statsByDate: {},
     lastVisitedPage: '/',
+    learningLanguage: DEFAULT_LEARNING_LANGUAGE,
+    speechVoiceSelections: {},
     updatedAt: new Date().toISOString(),
   }
 }
@@ -40,7 +72,7 @@ export function resetLearningData() {
 
 export function getWords() {
   const current = readData()
-  return Array.isArray(current.words) ? current.words : []
+  return Array.isArray(current.words) ? current.words.map(normalizeWordProgress) : []
 }
 
 export function saveWords(words) {
@@ -48,7 +80,7 @@ export function saveWords(words) {
 
   writeData({
     ...current,
-    words,
+    words: Array.isArray(words) ? words.map(normalizeWordProgress) : [],
     updatedAt: new Date().toISOString(),
   })
 }
@@ -62,42 +94,39 @@ export function updateWordResult(wordId, isCorrect, options = {}) {
 
   const nextWords = sourceWords.map((item) => {
     if (item.id !== wordId) {
-      return item
+      return normalizeWordProgress(item)
     }
 
-    const currentProgress = Number(item.spellingProgress) || 0
+    const currentSelfCheckSuccessCount = Number(item.selfCheckSuccessCount) || 0
+    const currentHintedSpellSuccessCount = Number(item.hintedSpellSuccessCount) || 0
     const currentFullSpellSuccessCount = Number(item.fullSpellSuccessCount) || 0
-    let nextProgress = currentProgress
+    let nextSelfCheckSuccessCount = currentSelfCheckSuccessCount
+    let nextHintedSpellSuccessCount = currentHintedSpellSuccessCount
     let nextFullSpellSuccessCount = currentFullSpellSuccessCount
 
-    if (isCorrect && questionMode === 'self_check' && currentProgress === 0) {
-      nextProgress = 1
+    if (isCorrect && questionMode === 'self_check') {
+      nextSelfCheckSuccessCount = Math.min(2, currentSelfCheckSuccessCount + 1)
     }
 
     if (isCorrect && questionMode === 'spell_input' && allowSpellProgress) {
-      if (spellVariant === 'hint_1') {
-        nextProgress = 2
-      } else if (spellVariant === 'hint_2') {
-        nextProgress = 3
+      if (spellVariant === 'hint_1' || spellVariant === 'hint_2') {
+        nextHintedSpellSuccessCount = Math.min(2, currentHintedSpellSuccessCount + 1)
       } else if (spellVariant === 'full') {
-        nextProgress = 3
-        nextFullSpellSuccessCount = currentFullSpellSuccessCount + 1
+        nextFullSpellSuccessCount = Math.min(2, currentFullSpellSuccessCount + 1)
       }
     }
 
     const nextStreak = isCorrect ? (item.correctStreak || 0) + 1 : 0
-    const isMastered = nextFullSpellSuccessCount >= 2
-    const nextStatus = isMastered ? 'mastered' : 'learning'
-
-    return {
+    return normalizeWordProgress({
       ...item,
       correctCount: (item.correctCount || 0) + (isCorrect ? 1 : 0),
       wrongCount: (item.wrongCount || 0) + (isCorrect ? 0 : 1),
       correctStreak: nextStreak,
-      spellingProgress: nextProgress,
+      spellingProgress: nextHintedSpellSuccessCount >= 2 ? 3 : nextHintedSpellSuccessCount,
+      selfCheckSuccessCount: nextSelfCheckSuccessCount,
+      hintedSpellSuccessCount: nextHintedSpellSuccessCount,
       fullSpellSuccessCount: nextFullSpellSuccessCount,
-      status: nextStatus,
-    }
+    })
   })
 
   writeData({
@@ -112,6 +141,44 @@ export function updateWordResult(wordId, isCorrect, options = {}) {
 export function initializeStorage() {
   if (!localStorage.getItem(STORAGE_KEY)) {
     writeData(getDefaultData())
+    return
+  }
+
+  const current = readData()
+  const normalizedWords = Array.isArray(current.words)
+    ? current.words.map(normalizeWordProgress)
+    : []
+
+  if (!isSupportedLearningLanguage(current.learningLanguage)) {
+    writeData({
+      ...current,
+      words: normalizedWords,
+      learningLanguage: DEFAULT_LEARNING_LANGUAGE,
+      speechVoiceSelections:
+        current.speechVoiceSelections && typeof current.speechVoiceSelections === 'object'
+          ? current.speechVoiceSelections
+          : {},
+      updatedAt: new Date().toISOString(),
+    })
+    return
+  }
+
+  if (!current.speechVoiceSelections || typeof current.speechVoiceSelections !== 'object') {
+    writeData({
+      ...current,
+      words: normalizedWords,
+      speechVoiceSelections: {},
+      updatedAt: new Date().toISOString(),
+    })
+    return
+  }
+
+  if (JSON.stringify(normalizedWords) !== JSON.stringify(current.words || [])) {
+    writeData({
+      ...current,
+      words: normalizedWords,
+      updatedAt: new Date().toISOString(),
+    })
   }
 }
 
@@ -121,6 +188,60 @@ export function saveLastVisitedPage(pathname) {
   writeData({
     ...current,
     lastVisitedPage: pathname,
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export function getLearningLanguage() {
+  const current = readData()
+
+  if (isSupportedLearningLanguage(current.learningLanguage)) {
+    return current.learningLanguage
+  }
+
+  return DEFAULT_LEARNING_LANGUAGE
+}
+
+export function saveLearningLanguage(language) {
+  const nextLanguage = isSupportedLearningLanguage(language)
+    ? language
+    : DEFAULT_LEARNING_LANGUAGE
+  const current = readData()
+
+  writeData({
+    ...current,
+    learningLanguage: nextLanguage,
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export function getSpeechVoiceSelection(language) {
+  const current = readData()
+  const selections =
+    current.speechVoiceSelections && typeof current.speechVoiceSelections === 'object'
+      ? current.speechVoiceSelections
+      : {}
+
+  return typeof selections[language] === 'string' ? selections[language] : ''
+}
+
+export function saveSpeechVoiceSelection(language, voiceURI) {
+  if (!isSupportedLearningLanguage(language)) {
+    return
+  }
+
+  const current = readData()
+  const selections =
+    current.speechVoiceSelections && typeof current.speechVoiceSelections === 'object'
+      ? current.speechVoiceSelections
+      : {}
+
+  writeData({
+    ...current,
+    speechVoiceSelections: {
+      ...selections,
+      [language]: voiceURI || '',
+    },
     updatedAt: new Date().toISOString(),
   })
 }

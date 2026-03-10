@@ -8,33 +8,111 @@ function buildWordItem(word, meaning, indexSeed) {
     wrongCount: 0,
     correctStreak: 0,
     spellingProgress: 0,
+    selfCheckSuccessCount: 0,
+    hintedSpellSuccessCount: 0,
     fullSpellSuccessCount: 0,
   }
+}
+
+function splitPipeColumns(line) {
+  const trimmedLine = line.trim()
+  const content = trimmedLine.replace(/^\|/, '').replace(/\|$/, '')
+
+  return content.split('|').map((column) => column.trim())
+}
+
+function isMarkdownDividerLine(columns) {
+  return (
+    columns.length >= 2 &&
+    columns.every((column) => column.length > 0 && /^:?-{3,}:?$/.test(column))
+  )
+}
+
+function isMarkdownTableRow(line) {
+  return line.includes('|')
+}
+
+function findNextNonEmptyLine(lines, startIndex) {
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index].trim()
+
+    if (line) {
+      return line
+    }
+  }
+
+  return ''
 }
 
 export function parseWordsText(text) {
   const words = []
   const seenWords = new Set()
   const lines = text.split('\n')
+  const invalidLines = []
+  let emptyLineCount = 0
 
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index].trim()
+    const rawLine = lines[index]
+    const line = rawLine.trim()
 
     if (!line) {
+      emptyLineCount += 1
       continue
     }
 
-    const parts = line.split(/\s+/)
-
-    if (parts.length < 2) {
+    if (!isMarkdownTableRow(line)) {
+      invalidLines.push({
+        lineNumber: index + 1,
+        content: rawLine,
+        reason: '缺少 | 分隔符',
+      })
       continue
     }
 
-    const word = parts[0].trim()
-    const meaning = parts.slice(1).join(' ')
+    const columns = splitPipeColumns(line)
+
+    if (columns.length < 2) {
+      invalidLines.push({
+        lineNumber: index + 1,
+        content: rawLine,
+        reason: '至少需要两列内容',
+      })
+      continue
+    }
+
+    if (isMarkdownDividerLine(columns)) {
+      continue
+    }
+
+    const nextNonEmptyLine = findNextNonEmptyLine(lines, index + 1)
+    const nextColumns = nextNonEmptyLine ? splitPipeColumns(nextNonEmptyLine) : []
+
+    if (
+      line.startsWith('|') &&
+      line.endsWith('|') &&
+      isMarkdownDividerLine(nextColumns)
+    ) {
+      continue
+    }
+
+    const [word, meaning] = columns
     const wordKey = word.toLowerCase()
 
-    if (!word || !meaning || seenWords.has(wordKey)) {
+    if (!word || !meaning) {
+      invalidLines.push({
+        lineNumber: index + 1,
+        content: rawLine,
+        reason: '目标语词项或源语释义为空',
+      })
+      continue
+    }
+
+    if (seenWords.has(wordKey)) {
+      invalidLines.push({
+        lineNumber: index + 1,
+        content: rawLine,
+        reason: '重复词项已忽略',
+      })
       continue
     }
 
@@ -42,7 +120,16 @@ export function parseWordsText(text) {
     words.push(buildWordItem(word, meaning, index))
   }
 
-  return words
+  return {
+    words,
+    stats: {
+      totalLines: lines.length,
+      importedCount: words.length,
+      emptyLineCount,
+      invalidLineCount: invalidLines.length,
+      invalidLines,
+    },
+  }
 }
 
 function isHeaderLine(columns) {

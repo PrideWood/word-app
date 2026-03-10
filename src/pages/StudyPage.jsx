@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Volume2 } from 'lucide-react'
+import { getSpeechLanguageCode, usesWholeTermInput } from '../utils/language.js'
 import { createQuestion } from '../utils/questionTypes.js'
 import { getNextWord } from '../utils/scheduler.js'
-import { getWords, updateWordResult } from '../utils/storage.js'
+import { getSpeechFallbackHint, resolveSpeechVoice } from '../utils/speech.js'
+import {
+  getLearningLanguage,
+  getSpeechVoiceSelection,
+  getWords,
+  updateWordResult,
+} from '../utils/storage.js'
 import { recordAnswer, recordStudyDuration } from '../utils/stats.js'
 
 function StudyPage() {
@@ -12,6 +19,9 @@ function StudyPage() {
   const [showAnswer, setShowAnswer] = useState(false)
   const [waitingNextAfterWrong, setWaitingNextAfterWrong] = useState(false)
   const [spellInputs, setSpellInputs] = useState({})
+  const [spellDrafts, setSpellDrafts] = useState({})
+  const [wholeSpellInput, setWholeSpellInput] = useState('')
+  const [wholeSpellDraft, setWholeSpellDraft] = useState('')
   const [spellResult, setSpellResult] = useState(null)
   const [spellRoundHasError, setSpellRoundHasError] = useState(false)
   const [speechHint, setSpeechHint] = useState('')
@@ -19,6 +29,50 @@ function StudyPage() {
   const savedDurationRef = useRef(false)
   const autoSpokenWordIdsRef = useRef(new Set())
   const autoSpeakTimerRef = useRef(null)
+  const spellInputRefs = useRef({})
+  const skipNextChangeRef = useRef({})
+  const wholeSpellInputRef = useRef(null)
+  const learningLanguage = getLearningLanguage()
+  const useWholeTermSpellInput = usesWholeTermInput(learningLanguage)
+  const questionFocusKey = `${currentWordId || 'none'}-${currentQuestion?.typeId || 'none'}`
+
+  const focusActiveSpellInput = () => {
+    if (!currentQuestion || currentQuestion.mode !== 'spell_input') {
+      return
+    }
+
+    if (useWholeTermSpellInput) {
+      wholeSpellInputRef.current?.focus({ preventScroll: true })
+      return
+    }
+
+    const blankIndexes = currentQuestion.puzzle
+      .filter((part) => part.type === 'blank')
+      .map((part) => part.index)
+    const firstEmptyIndex = blankIndexes.find((index) => !(spellInputs[index] || '').length)
+    const targetIndex = firstEmptyIndex ?? blankIndexes[0]
+
+    if (targetIndex !== undefined) {
+      spellInputRefs.current[targetIndex]?.focus({ preventScroll: true })
+    }
+  }
+
+  const focusFirstSpellInput = () => {
+    if (!currentQuestion || currentQuestion.mode !== 'spell_input') {
+      return
+    }
+
+    if (useWholeTermSpellInput) {
+      wholeSpellInputRef.current?.focus({ preventScroll: true })
+      return
+    }
+
+    const firstBlankIndex = currentQuestion.puzzle.find((part) => part.type === 'blank')?.index
+
+    if (firstBlankIndex !== undefined) {
+      spellInputRefs.current[firstBlankIndex]?.focus({ preventScroll: true })
+    }
+  }
 
   useEffect(() => {
     const storedWords = getWords()
@@ -78,8 +132,18 @@ function StudyPage() {
     setWaitingNextAfterWrong(false)
     setSpellResult(null)
     setSpellRoundHasError(false)
+    spellInputRefs.current = {}
+    skipNextChangeRef.current = {}
+    setSpellDrafts({})
+    setWholeSpellInput('')
+    setWholeSpellDraft('')
 
     if (!currentQuestion || currentQuestion.mode !== 'spell_input') {
+      setSpellInputs({})
+      return
+    }
+
+    if (useWholeTermSpellInput) {
       setSpellInputs({})
       return
     }
@@ -91,9 +155,24 @@ function StudyPage() {
         initialInputs[part.index] = ''
       }
     })
-
     setSpellInputs(initialInputs)
-  }, [currentQuestion])
+  }, [currentQuestion, useWholeTermSpellInput])
+
+  useEffect(() => {
+    if (!currentQuestion || currentQuestion.mode !== 'spell_input') {
+      return
+    }
+
+    const timerId = window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        focusFirstSpellInput()
+      })
+    }, 30)
+
+    return () => {
+      window.clearTimeout(timerId)
+    }
+  }, [currentQuestion, useWholeTermSpellInput])
 
   const speakWord = (silent = false) => {
     if (
@@ -110,20 +189,37 @@ function StudyPage() {
 
     const utterance = new SpeechSynthesisUtterance(currentWord.word)
     const voices = window.speechSynthesis.getVoices()
-    const englishVoice = voices.find((voice) => {
-      const name = (voice.name || '').toLowerCase()
-      const lang = (voice.lang || '').toLowerCase()
-      return name.includes('google us english') && lang.startsWith('en-us')
-    })
+    const learningLanguage = getLearningLanguage()
+    const preferredVoice = getSpeechVoiceSelection(learningLanguage)
+    const { voice, languageCode, usedFallback } = resolveSpeechVoice(
+      voices,
+      learningLanguage,
+      preferredVoice
+    )
 
-    if (englishVoice) {
-      utterance.voice = englishVoice
-      utterance.lang = englishVoice.lang
+    utterance.lang = voice?.lang || getSpeechLanguageCode(learningLanguage)
+
+    if (voice) {
+      utterance.voice = voice
     } else {
-      utterance.lang = 'en-US'
+      utterance.lang = languageCode
+    }
+
+    if (usedFallback && !silent) {
+      setSpeechHint(getSpeechFallbackHint(learningLanguage, voice))
+    } else if (!voice && !silent) {
+      setSpeechHint('当前浏览器没有可用语音。')
+    } else if (!voice) {
+      utterance.lang = languageCode
+    } else if (!silent) {
+      setSpeechHint('')
+    }
+
+    if (!voice) {
       if (!silent) {
-        setSpeechHint('未找到 Google US English，已回退默认英文语音。')
+        setSpeechHint('当前浏览器没有可用语音。')
       }
+      return
     }
 
     utterance.rate = 0.95
@@ -134,7 +230,7 @@ function StudyPage() {
       }
     }
     utterance.onstart = () => {
-      if (!silent) {
+      if (!silent && !usedFallback) {
         setSpeechHint('')
       }
     }
@@ -180,7 +276,10 @@ function StudyPage() {
       return
     }
 
-    const updatedWords = updateWordResult(currentWord.id, isCorrect, {
+    const evaluatedCorrect =
+      currentQuestion.mode === 'spell_input' ? isCorrect && !spellRoundHasError : isCorrect
+
+    const updatedWords = updateWordResult(currentWord.id, evaluatedCorrect, {
       questionMode: currentQuestion.mode,
       spellVariant: currentQuestion.spellVariant || null,
       allowSpellProgress:
@@ -189,7 +288,7 @@ function StudyPage() {
     const nextWord = getNextWord(updatedWords, currentWord.id)
     const nextQuestion = createQuestion(nextWord)
 
-    recordAnswer(isCorrect)
+    recordAnswer(evaluatedCorrect)
     setWords(updatedWords)
     setCurrentWordId(nextWord ? nextWord.id : null)
     setCurrentQuestion(nextQuestion)
@@ -228,8 +327,29 @@ function StudyPage() {
       return
     }
 
+    if (useWholeTermSpellInput) {
+      const normalizedInput = String(nextInputs || '').trim()
+
+      if (!normalizedInput) {
+        setSpellResult(null)
+        return
+      }
+
+      if (normalizedInput === currentQuestion.answer.trim()) {
+        moveToNextQuestion(true)
+        return
+      }
+
+      setSpellResult({
+        isCorrect: false,
+        message: '补全有误。请继续修改后重新确认。',
+      })
+      setSpellRoundHasError(true)
+      return
+    }
+
     const blankParts = currentQuestion.puzzle.filter((part) => part.type === 'blank')
-    const allFilled = blankParts.every((part) => (nextInputs[part.index] || '').trim().length === 1)
+    const allFilled = blankParts.every((part) => (nextInputs[part.index] || '').length === 1)
 
     if (!allFilled) {
       setSpellResult(null)
@@ -242,11 +362,12 @@ function StudyPage() {
           return part.value
         }
 
-        return (nextInputs[part.index] || '').trim()
+        return nextInputs[part.index] || ''
       })
       .join('')
 
-    const isCorrect = fullWord.toLowerCase() === currentQuestion.answer.toLowerCase()
+    const isCorrect =
+      fullWord.trim().toLowerCase() === currentQuestion.answer.trim().toLowerCase()
 
     if (isCorrect) {
       moveToNextQuestion(true)
@@ -265,88 +386,12 @@ function StudyPage() {
       return
     }
 
-    checkSpellAndHandle(spellInputs)
-  }, [spellInputs, currentQuestion])
-
-  useEffect(() => {
-    if (!currentQuestion || currentQuestion.mode !== 'spell_input') {
+    if (useWholeTermSpellInput) {
       return
     }
 
-    const blankIndexes = currentQuestion.puzzle
-      .filter((part) => part.type === 'blank')
-      .map((part) => part.index)
-
-    const handleKeyDown = (event) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return
-      }
-
-      if (event.key === 'Backspace') {
-        event.preventDefault()
-
-        let nextInputs = null
-
-        setSpellInputs((prev) => {
-          const lastFilled = [...blankIndexes]
-            .reverse()
-            .find((index) => (prev[index] || '').length > 0)
-
-          if (lastFilled === undefined) {
-            nextInputs = prev
-            return prev
-          }
-
-          nextInputs = {
-            ...prev,
-            [lastFilled]: '',
-          }
-
-          return nextInputs
-        })
-
-        if (nextInputs) {
-          setSpellResult(null)
-        }
-
-        return
-      }
-
-      if (!/^[a-zA-Z]$/.test(event.key)) {
-        return
-      }
-
-      event.preventDefault()
-      const letter = event.key.toLowerCase()
-      let nextInputs = null
-
-      setSpellInputs((prev) => {
-        const targetIndex = blankIndexes.find((index) => (prev[index] || '').length === 0)
-
-        if (targetIndex === undefined) {
-          nextInputs = prev
-          return prev
-        }
-
-        nextInputs = {
-          ...prev,
-          [targetIndex]: letter,
-        }
-
-        return nextInputs
-      })
-
-      if (nextInputs) {
-        setSpellResult(null)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [currentQuestion])
+    checkSpellAndHandle(spellInputs)
+  }, [spellInputs, currentQuestion, useWholeTermSpellInput])
 
   useEffect(() => {
     if (!currentQuestion || currentQuestion.mode !== 'self_check') {
@@ -387,104 +432,317 @@ function StudyPage() {
   }, [currentQuestion, waitingNextAfterWrong, currentWord, words])
 
   const handleCardClick = () => {
-    if (!currentQuestion || currentQuestion.mode !== 'self_check') {
+    if (!currentQuestion) {
+      return
+    }
+
+    if (currentQuestion.mode === 'spell_input') {
+      focusActiveSpellInput()
+      return
+    }
+
+    if (currentQuestion.mode !== 'self_check') {
       return
     }
 
     setShowAnswer(true)
   }
 
+  const focusNextBlank = (index) => {
+    const blankIndexes = currentQuestion?.puzzle
+      ?.filter((part) => part.type === 'blank')
+      .map((part) => part.index) || []
+    const nextBlankIndex = blankIndexes.find((blankIndex) => blankIndex > index)
+
+    if (nextBlankIndex !== undefined) {
+      window.setTimeout(() => {
+        spellInputRefs.current[nextBlankIndex]?.focus()
+      }, 0)
+    }
+  }
+
+  const commitSpellInput = (index, rawValue) => {
+    const nextChar = [...rawValue].slice(-1)[0] || ''
+    let nextInputs = null
+
+    setSpellInputs((prev) => {
+      nextInputs = {
+        ...prev,
+        [index]: nextChar,
+      }
+
+      return nextInputs
+    })
+    setSpellDrafts((prev) => ({
+      ...prev,
+      [index]: '',
+    }))
+
+    setSpellResult(null)
+
+    if (nextChar) {
+      focusNextBlank(index)
+    }
+  }
+
+  const handleSpellInputChange = (index, value, isComposing) => {
+    if (skipNextChangeRef.current[index]) {
+      skipNextChangeRef.current[index] = false
+      return
+    }
+
+    if (isComposing) {
+      setSpellDrafts((prev) => ({
+        ...prev,
+        [index]: value,
+      }))
+      return
+    }
+
+    commitSpellInput(index, value)
+  }
+
+  const handleSpellInputCompositionStart = (index) => {
+    setSpellDrafts((prev) => ({
+      ...prev,
+      [index]: '',
+    }))
+  }
+
+  const handleSpellInputCompositionEnd = (index, value) => {
+    skipNextChangeRef.current[index] = true
+    commitSpellInput(index, value)
+  }
+
+  const handleSpellInputKeyDown = (event, index) => {
+    if (event.nativeEvent.isComposing) {
+      return
+    }
+
+    if (event.key !== 'Backspace' || (spellInputs[index] || '').length > 0) {
+      return
+    }
+
+    const blankIndexes = currentQuestion?.puzzle
+      ?.filter((part) => part.type === 'blank')
+      .map((part) => part.index) || []
+    const currentPosition = blankIndexes.indexOf(index)
+    const previousBlankIndex =
+      currentPosition > 0 ? blankIndexes[currentPosition - 1] : undefined
+
+    if (previousBlankIndex === undefined) {
+      return
+    }
+
+    event.preventDefault()
+    setSpellInputs((prev) => ({
+      ...prev,
+      [previousBlankIndex]: '',
+    }))
+    setSpellDrafts((prev) => ({
+      ...prev,
+      [index]: '',
+      [previousBlankIndex]: '',
+    }))
+    setSpellResult(null)
+
+    window.setTimeout(() => {
+      spellInputRefs.current[previousBlankIndex]?.focus()
+    }, 0)
+  }
+
+  const handleWholeSpellInputChange = (value, isComposing) => {
+    if (isComposing) {
+      setWholeSpellDraft(value)
+      return
+    }
+
+    setWholeSpellInput(value)
+    setWholeSpellDraft('')
+    setSpellResult(null)
+  }
+
+  const handleWholeSpellCompositionEnd = (value) => {
+    setWholeSpellInput(value)
+    setWholeSpellDraft('')
+    setSpellResult(null)
+  }
+
+  const handleWholeSpellKeyDown = (event) => {
+    if (event.nativeEvent.isComposing) {
+      return
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      checkSpellAndHandle(wholeSpellInput)
+    }
+  }
+
   if (words.length === 0) {
     return (
-      <section className="page">
-        <p className="page-desc">当前没有单词，请先到导入页添加词汇。</p>
+      <section className="page page-centered">
+        <div className="page-stack page-stack-compact">
+          <p className="page-desc">当前没有单词，请先到导入页添加词汇。</p>
+        </div>
       </section>
     )
   }
 
   if (!currentWord || !currentQuestion) {
     return (
-      <section className="page">
-        <p className="page-desc">当前词库已全部掌握，暂时没有可学习的题目。</p>
+      <section className="page page-centered">
+        <div className="page-stack page-stack-compact">
+          <p className="page-desc">当前词库已全部掌握，暂时没有可学习的题目。</p>
+        </div>
       </section>
     )
   }
 
   return (
-    <section className="page">
-      <div
-        className={`word-card ${currentQuestion.mode === 'self_check' ? 'word-card-clickable' : ''}`}
-        onClick={handleCardClick}
-      >
-        <p className="page-desc">{currentQuestion.instruction}</p>
-        <div className="word-header">
-          <h2 className="word-title">{currentQuestion.prompt}</h2>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation()
-              speakWord(false)
-            }}
-            className="icon-btn"
-            aria-label="播放发音"
-            title="播放发音"
-          >
-            <Volume2 size={16} strokeWidth={2} aria-hidden="true" />
-          </button>
+    <section className="page page-centered">
+      <div className="page-stack page-stack-compact">
+        <div
+          className={`word-card ${currentQuestion.mode === 'self_check' ? 'word-card-clickable' : ''}`}
+          onClick={handleCardClick}
+        >
+          <p className="page-desc">{currentQuestion.instruction}</p>
+          <div className="word-header">
+            <h2 className="word-title">{currentQuestion.prompt}</h2>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                speakWord(false)
+              }}
+              className="icon-btn"
+              aria-label="播放发音"
+              title="播放发音"
+            >
+              <Volume2 size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
+
+          {currentQuestion.mode === 'spell_input' ? (
+            useWholeTermSpellInput ? (
+              <div key={questionFocusKey} className="actions">
+                <input
+                  ref={wholeSpellInputRef}
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  autoFocus
+                  onClick={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onFocus={(event) => event.stopPropagation()}
+                  value={wholeSpellDraft || wholeSpellInput}
+                  onChange={(event) =>
+                    handleWholeSpellInputChange(
+                      event.target.value,
+                      event.nativeEvent.isComposing
+                    )
+                  }
+                  onCompositionEnd={(event) =>
+                    handleWholeSpellCompositionEnd(event.currentTarget.value)
+                  }
+                  onKeyDown={handleWholeSpellKeyDown}
+                  className="input-area"
+                  style={{ minHeight: 'auto' }}
+                  aria-label="输入完整目标语词项"
+                />
+                <button
+                  type="button"
+                  onClick={() => checkSpellAndHandle(wholeSpellInput)}
+                  className="btn"
+                >
+                  确认补全
+                </button>
+              </div>
+            ) : (
+              <div key={questionFocusKey} className="spell-row">
+                {currentQuestion.puzzle.map((part, idx) => {
+                  const firstBlankIndex = currentQuestion.puzzle.find(
+                    (puzzlePart) => puzzlePart.type === 'blank'
+                  )?.index
+
+                  if (part.type === 'fixed') {
+                    return (
+                      <span key={`fixed-${idx}`} className="spell-char">
+                        {part.value}
+                      </span>
+                    )
+                  }
+
+                  return (
+                  <input
+                    key={`blank-${part.index}`}
+                    ref={(node) => {
+                      if (node) {
+                        spellInputRefs.current[part.index] = node
+                        }
+                    }}
+                    type="text"
+                    inputMode="text"
+                    autoComplete="off"
+                    autoFocus={part.index === firstBlankIndex}
+                    onClick={(event) => event.stopPropagation()}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onFocus={(event) => event.stopPropagation()}
+                    value={spellDrafts[part.index] || spellInputs[part.index] || ''}
+                      onChange={(event) =>
+                        handleSpellInputChange(
+                          part.index,
+                          event.target.value,
+                          event.nativeEvent.isComposing
+                        )
+                      }
+                      onCompositionStart={() => handleSpellInputCompositionStart(part.index)}
+                      onCompositionEnd={(event) =>
+                        handleSpellInputCompositionEnd(part.index, event.currentTarget.value)
+                      }
+                      onKeyDown={(event) => handleSpellInputKeyDown(event, part.index)}
+                      className="spell-input-view"
+                      aria-label={`填写第 ${part.index + 1} 个字符`}
+                    />
+                  )
+                })}
+              </div>
+            )
+          ) : showAnswer ? (
+            <p>{currentQuestion.answer}</p>
+          ) : (
+            <p>点击卡片查看释义</p>
+          )}
         </div>
+        {speechHint ? <p className="text-error">{speechHint}</p> : null}
 
         {currentQuestion.mode === 'spell_input' ? (
-          <div className="spell-row">
-            {currentQuestion.puzzle.map((part, idx) => {
-              if (part.type === 'fixed') {
-                return (
-                  <span key={`fixed-${idx}`} className="spell-char">
-                    {part.value}
-                  </span>
-                )
-              }
-
-              return (
-                <span key={`blank-${part.index}`} className="spell-input-view">
-                  {spellInputs[part.index] || '\u00A0'}
-                </span>
-              )
-            })}
+          spellResult ? <p className={spellResult.isCorrect ? 'text-ok' : 'text-error'}>{spellResult.message}</p> : null
+        ) : waitingNextAfterWrong ? (
+          <div className="actions">
+            <button
+              type="button"
+              onClick={handleNextAfterWrong}
+              className="btn btn-secondary"
+            >
+              下一题
+            </button>
           </div>
-        ) : showAnswer ? (
-          <p>{currentQuestion.answer}</p>
         ) : (
-          <p>点击卡片查看释义</p>
+          <div className="actions">
+            <button type="button" onClick={() => moveToNextQuestion(true)} className="btn">
+              认识
+            </button>
+            <button
+              type="button"
+              onClick={handleSelfCheckWrong}
+              className="btn btn-secondary"
+            >
+              不认识
+            </button>
+          </div>
         )}
       </div>
-      {speechHint ? <p className="text-error">{speechHint}</p> : null}
-
-      {currentQuestion.mode === 'spell_input' ? (
-        spellResult ? <p className={spellResult.isCorrect ? 'text-ok' : 'text-error'}>{spellResult.message}</p> : null
-      ) : waitingNextAfterWrong ? (
-        <div className="actions">
-          <button
-            type="button"
-            onClick={handleNextAfterWrong}
-            className="btn btn-secondary"
-          >
-            下一题
-          </button>
-        </div>
-      ) : (
-        <div className="actions">
-          <button type="button" onClick={() => moveToNextQuestion(true)} className="btn">
-            认识
-          </button>
-          <button
-            type="button"
-            onClick={handleSelfCheckWrong}
-            className="btn btn-secondary"
-          >
-            不认识
-          </button>
-        </div>
-      )}
     </section>
   )
 }
