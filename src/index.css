@@ -320,9 +320,10 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
+  width: 1.15em;
+  min-width: 1.15em;
   height: 32px;
-  padding: 0;
+  padding: 0 1px;
   border: 0;
   border-bottom: 1px solid var(--line-strong);
   border-radius: 0;
@@ -331,9 +332,10 @@ select {
   font-weight: 500;
   line-height: 1;
   text-align: center;
-  text-transform: lowercase;
+  text-transform: none;
   box-shadow: none;
   color: var(--text);
+  overflow: visible;
 }
 
 .spell-input-view:focus {

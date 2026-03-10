@@ -400,8 +400,7 @@ function StudyPage() {
       })
       .join('')
 
-    const isCorrect =
-      fullWord.trim().toLowerCase() === currentQuestion.answer.trim().toLowerCase()
+    const isCorrect = fullWord.trim() === currentQuestion.answer.trim()
 
     if (isCorrect) {
       moveToNextQuestion(true)

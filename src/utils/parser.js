@@ -96,7 +96,7 @@ export function parseWordsText(text) {
     }
 
     const [word, meaning] = columns
-    const wordKey = word.toLowerCase()
+    const wordKey = word
 
     if (!word || !meaning) {
       invalidLines.push({
@@ -174,7 +174,7 @@ export function parseWordsCsv(csvText) {
 
     const word = columns[0].trim()
     const meaning = columns.slice(1).join(',').trim()
-    const wordKey = word.toLowerCase()
+    const wordKey = word
 
     if (!word || !meaning || seenWords.has(wordKey)) {
       continue
