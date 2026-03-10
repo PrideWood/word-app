@@ -37,6 +37,8 @@ function getDefaultData() {
     lastVisitedPage: '/',
     learningLanguage: DEFAULT_LEARNING_LANGUAGE,
     speechVoiceSelections: {},
+    totalImportedWordCount: 0,
+    lastImportWordCount: 0,
     updatedAt: new Date().toISOString(),
   }
 }
@@ -66,6 +68,8 @@ export function resetLearningData() {
     ...current,
     words: [],
     statsByDate: {},
+    totalImportedWordCount: 0,
+    lastImportWordCount: 0,
     updatedAt: new Date().toISOString(),
   })
 }
@@ -77,12 +81,32 @@ export function getWords() {
 
 export function saveWords(words) {
   const current = readData()
+  const existingWords = Array.isArray(current.words) ? current.words.map(normalizeWordProgress) : []
+  const incomingWords = Array.isArray(words) ? words.map(normalizeWordProgress) : []
+  const seenWordKeys = new Set(existingWords.map((item) => item.word))
+  const appendedWords = incomingWords.filter((item) => {
+    if (seenWordKeys.has(item.word)) {
+      return false
+    }
+
+    seenWordKeys.add(item.word)
+    return true
+  })
+  const mergedWords = [...existingWords, ...appendedWords]
 
   writeData({
     ...current,
-    words: Array.isArray(words) ? words.map(normalizeWordProgress) : [],
+    words: mergedWords,
+    totalImportedWordCount: mergedWords.length,
+    lastImportWordCount: appendedWords.length,
     updatedAt: new Date().toISOString(),
   })
+
+  return {
+    words: mergedWords,
+    importedCount: appendedWords.length,
+    skippedCount: incomingWords.length - appendedWords.length,
+  }
 }
 
 export function updateWordResult(wordId, isCorrect, options = {}) {
@@ -158,16 +182,36 @@ export function initializeStorage() {
         current.speechVoiceSelections && typeof current.speechVoiceSelections === 'object'
           ? current.speechVoiceSelections
           : {},
+      totalImportedWordCount:
+        typeof current.totalImportedWordCount === 'number'
+          ? current.totalImportedWordCount
+          : normalizedWords.length,
+      lastImportWordCount:
+        typeof current.lastImportWordCount === 'number' ? current.lastImportWordCount : 0,
       updatedAt: new Date().toISOString(),
     })
     return
   }
 
-  if (!current.speechVoiceSelections || typeof current.speechVoiceSelections !== 'object') {
+  if (
+    !current.speechVoiceSelections ||
+    typeof current.speechVoiceSelections !== 'object' ||
+    typeof current.totalImportedWordCount !== 'number' ||
+    typeof current.lastImportWordCount !== 'number'
+  ) {
     writeData({
       ...current,
       words: normalizedWords,
-      speechVoiceSelections: {},
+      speechVoiceSelections:
+        current.speechVoiceSelections && typeof current.speechVoiceSelections === 'object'
+          ? current.speechVoiceSelections
+          : {},
+      totalImportedWordCount:
+        typeof current.totalImportedWordCount === 'number'
+          ? current.totalImportedWordCount
+          : normalizedWords.length,
+      lastImportWordCount:
+        typeof current.lastImportWordCount === 'number' ? current.lastImportWordCount : 0,
       updatedAt: new Date().toISOString(),
     })
     return
@@ -244,4 +288,18 @@ export function saveSpeechVoiceSelection(language, voiceURI) {
     },
     updatedAt: new Date().toISOString(),
   })
+}
+
+export function getImportSummary() {
+  const current = readData()
+  const words = Array.isArray(current.words) ? current.words : []
+
+  return {
+    totalImportedWordCount:
+      typeof current.totalImportedWordCount === 'number'
+        ? current.totalImportedWordCount
+        : words.length,
+    lastImportWordCount:
+      typeof current.lastImportWordCount === 'number' ? current.lastImportWordCount : 0,
+  }
 }

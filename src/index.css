@@ -520,7 +520,7 @@ select {
   padding: 6px 12px;
   border-width: 1px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: inherit;
   color: var(--danger-text);
   border-color: #e3c7c7;
   background: #fbf5f5;
@@ -528,7 +528,7 @@ select {
 
 .danger-note {
   margin: 0;
-  color: var(--text-faint);
+  color: var(--danger-text);
   font-size: 12px;
   text-align: center;
 }

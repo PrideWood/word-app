@@ -25,7 +25,7 @@ function AppLayout() {
     <div className="app-shell">
       <nav className="nav">
         <NavLink to="/" className="nav-link">
-          首页
+          WordLoop首页
         </NavLink>
         <NavLink to="/import" className="nav-link">
           导入页

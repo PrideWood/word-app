@@ -65,6 +65,16 @@ function HomePage() {
   return (
     <section className="page page-centered home-page">
       <div className="page-stack page-stack-compact home-page-stack">
+        <div className="word-card home-card">
+          <p className="page-desc section-kicker">WordLoop</p>
+          <p className="home-note">WordLoop 是一个适合少量多次复习的轻量词表工具。</p>
+          <p className="home-note">
+            支持文本与 CSV 导入、发音朗读、认识判断和拼写练习，适合把最近遇到的生词和短语快速加入、及时复习。
+          </p>
+          <p className="home-note">学习页包含两类题型：认识判断题与补全题（有提示补全逐步过渡到完整补全）。</p>
+          <p className="home-note">学习规则：每个词至少经历两次认识判断、两次有提示补全、两次完整补全后，才会标记为已掌握。</p>
+          <p className="home-note">按键对应：空格=认识，回车=不认识；出现“下一题”按钮时可按回车继续。</p>
+        </div>
 
         <div className="word-card feature-card home-card">
           <p className="page-desc section-kicker">当前学习语言</p>
@@ -128,13 +138,6 @@ function HomePage() {
         {!hasWords ? (
           <p className="text-error">当前还没有导入单词，请先前往导入页添加词表。</p>
         ) : null}
-
-        <div className="word-card home-card">
-          <p className="page-desc section-kicker">新用户说明</p>
-          <p className="home-note">学习页包含两类题型：认识判断题与补全题（有提示补全逐步过渡到完整补全）。</p>
-          <p className="home-note">学习规则：每个词至少经历两次认识判断、两次有提示补全、两次完整补全后，才会标记为已掌握。</p>
-          <p className="home-note">按键对应：空格=认识，回车=不认识；出现“下一题”按钮时可按回车继续。</p>
-        </div>
 
         <div className="actions home-actions">
           <Link to="/study" className="btn">

@@ -48,13 +48,17 @@ function ImportPage() {
       return
     }
 
-    saveWords(words)
+    const saveResult = saveWords(words)
     const invalidSummary =
       stats.invalidLineCount > 0
         ? ` 已忽略 ${stats.invalidLineCount} 条无效行。`
         : ''
+    const duplicateSummary =
+      saveResult.skippedCount > 0 ? ` 已跳过 ${saveResult.skippedCount} 个已存在词条。` : ''
 
-    setResult(`导入成功，共 ${words.length} 个单词。${invalidSummary}${legacyFormatHint}`)
+    setResult(
+      `导入成功，本次新增 ${saveResult.importedCount} 个单词。${duplicateSummary}${invalidSummary}${legacyFormatHint}`
+    )
     setError('')
   }
 
@@ -92,8 +96,11 @@ function ImportPage() {
         return
       }
 
-      saveWords(words)
-      setResult(`CSV 导入成功，共 ${words.length} 个单词。`)
+      const saveResult = saveWords(words)
+      const duplicateSummary =
+        saveResult.skippedCount > 0 ? ` 已跳过 ${saveResult.skippedCount} 个已存在词条。` : ''
+
+      setResult(`CSV 导入成功，本次新增 ${saveResult.importedCount} 个单词。${duplicateSummary}`)
       setError('')
     } catch {
       setError('CSV 文件读取或解析失败，请确认文件编码和格式。')
