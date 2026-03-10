@@ -65,7 +65,6 @@ function HomePage() {
   return (
     <section className="page page-centered home-page">
       <div className="page-stack page-stack-compact home-page-stack">
-        <p className="page-desc home-intro">这里是学习总览，你可以快速查看进度并继续学习。</p>
 
         <div className="word-card feature-card home-card">
           <p className="page-desc section-kicker">当前学习语言</p>
