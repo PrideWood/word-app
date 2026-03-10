@@ -27,7 +27,7 @@ function StudyPage() {
   const [speechHint, setSpeechHint] = useState('')
   const enterTimeRef = useRef(0)
   const savedDurationRef = useRef(false)
-  const autoSpokenWordIdsRef = useRef(new Set())
+  const autoSpokenQuestionStageRef = useRef(new Set())
   const autoSpeakTimerRef = useRef(null)
   const spellInputRefs = useRef({})
   const skipNextChangeRef = useRef({})
@@ -35,6 +35,26 @@ function StudyPage() {
   const learningLanguage = getLearningLanguage()
   const useWholeTermSpellInput = usesWholeTermInput(learningLanguage)
   const questionFocusKey = `${currentWordId || 'none'}-${currentQuestion?.typeId || 'none'}`
+
+  const getQuestionAudioStageKey = () => {
+    if (!currentWord || !currentQuestion) {
+      return ''
+    }
+
+    if (currentQuestion.mode === 'self_check') {
+      return `${currentWord.id}:self_check`
+    }
+
+    if (currentQuestion.mode === 'spell_input' && currentQuestion.spellVariant === 'full') {
+      return `${currentWord.id}:spell_full`
+    }
+
+    if (currentQuestion.mode === 'spell_input') {
+      return `${currentWord.id}:spell_hint`
+    }
+
+    return `${currentWord.id}:${currentQuestion.typeId}`
+  }
 
   const focusActiveSpellInput = () => {
     if (!currentQuestion || currentQuestion.mode !== 'spell_input') {
@@ -240,21 +260,21 @@ function StudyPage() {
   }
 
   useEffect(() => {
-    if (!currentWord) {
+    if (!currentWord || !currentQuestion) {
       return
     }
 
-    const isNewWord = currentWord.status === 'new' || (currentWord.correctCount || 0) === 0
+    const questionAudioStageKey = getQuestionAudioStageKey()
 
-    if (!isNewWord) {
+    if (!questionAudioStageKey) {
       return
     }
 
-    if (autoSpokenWordIdsRef.current.has(currentWord.id)) {
+    if (autoSpokenQuestionStageRef.current.has(questionAudioStageKey)) {
       return
     }
 
-    autoSpokenWordIdsRef.current.add(currentWord.id)
+    autoSpokenQuestionStageRef.current.add(questionAudioStageKey)
 
     if (autoSpeakTimerRef.current) {
       window.clearTimeout(autoSpeakTimerRef.current)
@@ -269,7 +289,7 @@ function StudyPage() {
         window.clearTimeout(autoSpeakTimerRef.current)
       }
     }
-  }, [currentWord])
+  }, [currentWord, currentQuestion])
 
   const moveToNextQuestion = (isCorrect) => {
     if (!currentWord || !currentQuestion) {
@@ -289,6 +309,12 @@ function StudyPage() {
     const nextQuestion = createQuestion(nextWord)
 
     recordAnswer(evaluatedCorrect)
+    setSpellInputs({})
+    setSpellDrafts({})
+    setWholeSpellInput('')
+    setWholeSpellDraft('')
+    setSpellResult(null)
+    setSpellRoundHasError(false)
     setWords(updatedWords)
     setCurrentWordId(nextWord ? nextWord.id : null)
     setCurrentQuestion(nextQuestion)
@@ -306,6 +332,7 @@ function StudyPage() {
     setWords(updatedWords)
     setShowAnswer(true)
     setWaitingNextAfterWrong(true)
+    speakWord(false)
   }
 
   const handleNextAfterWrong = () => {
@@ -316,6 +343,12 @@ function StudyPage() {
     const nextWord = getNextWord(words, currentWordId)
     const nextQuestion = createQuestion(nextWord)
 
+    setSpellInputs({})
+    setSpellDrafts({})
+    setWholeSpellInput('')
+    setWholeSpellDraft('')
+    setSpellResult(null)
+    setSpellRoundHasError(false)
     setCurrentWordId(nextWord ? nextWord.id : null)
     setCurrentQuestion(nextQuestion)
     setShowAnswer(false)
@@ -345,6 +378,7 @@ function StudyPage() {
         message: '补全有误。请继续修改后重新确认。',
       })
       setSpellRoundHasError(true)
+      speakWord(false)
       return
     }
 
@@ -379,6 +413,7 @@ function StudyPage() {
       message: '拼写有误。请按 Backspace 回退到错误字母位置后继续输入。',
     })
     setSpellRoundHasError(true)
+    speakWord(false)
   }
 
   useEffect(() => {
