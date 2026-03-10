@@ -102,8 +102,8 @@ function ImportPage() {
   }
 
   return (
-    <section className="page page-centered">
-      <div className="page-stack page-stack-compact">
+    <section className="page page-centered page-centered-stable">
+      <div className="page-stack page-stack-compact page-stack-stable">
         <p className="page-desc import-desc">
           支持两种文本导入方式：<code>term | meaning</code>，或两列 Markdown 表格。
         </p>

@@ -24,6 +24,7 @@ function StudyPage() {
   const [wholeSpellDraft, setWholeSpellDraft] = useState('')
   const [spellResult, setSpellResult] = useState(null)
   const [spellRoundHasError, setSpellRoundHasError] = useState(false)
+  const [spellErrorCount, setSpellErrorCount] = useState(0)
   const [speechHint, setSpeechHint] = useState('')
   const enterTimeRef = useRef(0)
   const savedDurationRef = useRef(false)
@@ -152,6 +153,7 @@ function StudyPage() {
     setWaitingNextAfterWrong(false)
     setSpellResult(null)
     setSpellRoundHasError(false)
+    setSpellErrorCount(0)
     spellInputRefs.current = {}
     skipNextChangeRef.current = {}
     setSpellDrafts({})
@@ -315,6 +317,7 @@ function StudyPage() {
     setWholeSpellDraft('')
     setSpellResult(null)
     setSpellRoundHasError(false)
+    setSpellErrorCount(0)
     setWords(updatedWords)
     setCurrentWordId(nextWord ? nextWord.id : null)
     setCurrentQuestion(nextQuestion)
@@ -349,6 +352,7 @@ function StudyPage() {
     setWholeSpellDraft('')
     setSpellResult(null)
     setSpellRoundHasError(false)
+    setSpellErrorCount(0)
     setCurrentWordId(nextWord ? nextWord.id : null)
     setCurrentQuestion(nextQuestion)
     setShowAnswer(false)
@@ -375,8 +379,12 @@ function StudyPage() {
 
       setSpellResult({
         isCorrect: false,
-        message: '补全有误。请继续修改后重新确认。',
+        message:
+          spellErrorCount + 1 >= 3
+            ? `补全有误。正确答案：${currentQuestion.answer}`
+            : '补全有误。请继续修改后重新确认。',
       })
+      setSpellErrorCount((prev) => prev + 1)
       setSpellRoundHasError(true)
       speakWord(false)
       return
@@ -409,8 +417,12 @@ function StudyPage() {
 
     setSpellResult({
       isCorrect: false,
-      message: '拼写有误。请按 Backspace 回退到错误字母位置后继续输入。',
+      message:
+        spellErrorCount + 1 >= 3
+          ? `拼写有误。正确答案：${currentQuestion.answer}`
+          : '拼写有误。请按 Backspace 回退到错误字母位置后继续输入。',
     })
+    setSpellErrorCount((prev) => prev + 1)
     setSpellRoundHasError(true)
     speakWord(false)
   }
@@ -634,8 +646,8 @@ function StudyPage() {
   }
 
   return (
-    <section className="page page-centered">
-      <div className="page-stack page-stack-compact">
+    <section className="page page-centered page-centered-stable">
+      <div className="page-stack page-stack-compact page-stack-stable">
         <div
           className={`word-card ${currentQuestion.mode === 'self_check' ? 'word-card-clickable' : ''}`}
           onClick={handleCardClick}
@@ -700,8 +712,14 @@ function StudyPage() {
                   )?.index
 
                   if (part.type === 'fixed') {
+                    const isSpace = part.value === ' '
+                    const isSymbol = part.value === '-'
+
                     return (
-                      <span key={`fixed-${idx}`} className="spell-char">
+                      <span
+                        key={`fixed-${idx}`}
+                        className={`spell-char${isSpace ? ' spell-char-space' : ''}${isSymbol ? ' spell-char-symbol' : ''}`}
+                      >
                         {part.value}
                       </span>
                     )

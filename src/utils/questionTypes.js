@@ -8,7 +8,16 @@ function buildSpellingPuzzle(word, variant) {
     return indexes
   }, [])
 
-  if (letterIndexes.length <= 2 || variant === 'full') {
+  if (variant === 'full') {
+    return chars.map((char, index) => ({
+      type: 'blank',
+      value: '',
+      answer: char,
+      index,
+    }))
+  }
+
+  if (letterIndexes.length <= 2) {
     return chars.map((char, index) => ({
       type: !/[\s-]/.test(char) ? 'blank' : 'fixed',
       value: !/[\s-]/.test(char) ? '' : char,

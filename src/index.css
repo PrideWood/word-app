@@ -97,6 +97,10 @@ select {
   min-height: clamp(620px, calc(100vh - 142px), 920px);
 }
 
+.page-centered-stable {
+  align-items: flex-start;
+}
+
 .page-stack {
   display: grid;
   gap: 12px;
@@ -108,6 +112,11 @@ select {
   width: min(100%, 700px);
   margin: 0 auto;
   align-content: center;
+}
+
+.page-stack-stable {
+  margin-top: clamp(64px, 12vh, 132px);
+  margin-bottom: auto;
 }
 
 .home-page {
@@ -298,7 +307,7 @@ select {
 .spell-row {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
+  gap: 0;
   flex-wrap: wrap;
   margin-top: 4px;
 }
@@ -309,21 +318,31 @@ select {
   justify-content: center;
   min-width: auto;
   height: 32px;
-  padding: 0 1px;
+  padding: 0;
   font-size: 22px;
   font-weight: 500;
   color: var(--text);
   line-height: 1;
 }
 
+.spell-char-space {
+  width: 1.05em;
+  min-width: 1.05em;
+}
+
+.spell-char-symbol {
+  width: 0.6em;
+  min-width: 0.6em;
+}
+
 .spell-input-view {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.15em;
-  min-width: 1.15em;
+  width: 1.02em;
+  min-width: 1.02em;
   height: 32px;
-  padding: 0 1px;
+  padding: 0;
   border: 0;
   border-bottom: 1px solid var(--line-strong);
   border-radius: 0;
@@ -556,6 +575,10 @@ select {
   .page-centered,
   .home-page {
     min-height: calc(100vh - 130px);
+  }
+
+  .page-stack-stable {
+    margin-top: 32px;
   }
 
   .home-page-stack {
