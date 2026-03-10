@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>my-word-app</title>
+    <script>
+      ;(function () {
+        const redirect = sessionStorage.getItem('gh-pages-path')
+        if (!redirect) return
+
+        sessionStorage.removeItem('gh-pages-path')
+        const targetUrl = new URL(redirect, window.location.origin)
+
+        if (targetUrl.pathname + targetUrl.search + targetUrl.hash !== window.location.pathname + window.location.search + window.location.hash) {
+          window.history.replaceState(null, '', targetUrl.pathname + targetUrl.search + targetUrl.hash)
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
